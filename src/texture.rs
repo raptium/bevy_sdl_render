@@ -33,12 +33,8 @@ fn extract_textures(
                     Ok(())
                 })?;
             }
-            AssetEvent::Removed { id } => {
-                SdlRegistry::with_borrow_mut(|registry| registry.remove_texture(id))
-            }
-            AssetEvent::Unused { id } => {
-                SdlRegistry::with_borrow_mut(|registry| registry.remove_texture(id))
-            }
+            AssetEvent::Removed { id } => SdlRegistry::remove_texture(id),
+            AssetEvent::Unused { id } => SdlRegistry::remove_texture(id),
             AssetEvent::LoadedWithDependencies { id } => {
                 SdlRegistry::with_borrow_mut(|registry| -> Result<()> {
                     if let Some(image) = images.get(*id) {
