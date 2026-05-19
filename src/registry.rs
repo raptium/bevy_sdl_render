@@ -16,7 +16,7 @@ thread_local! {
 pub struct SdlRegistry {
     context: sdl2::Sdl,
     canvas: Canvas<SdlWindow>,
-    texture_creator: TextureCreator<WindowContext>,
+    texture_creator: &'static TextureCreator<WindowContext>,
 }
 
 #[derive(Default, Deref, DerefMut)]
@@ -45,7 +45,10 @@ impl SdlRegistry {
 
         //XXX .accelerated()?
         let canvas = window.into_canvas().present_vsync().build()?;
-        let texture_creator = canvas.texture_creator();
+        // Leak the TextureCreator so we can store a static lifetime.
+        // We store the textures in a static HashMap, so TextureCreator needs to be static so they don't outlive it
+        let texture_creator: &'static TextureCreator<WindowContext> =
+            Box::leak(Box::new(canvas.texture_creator()));
         SDL_REGISTRY.set(Self {
             context,
             canvas,
