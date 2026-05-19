@@ -2,12 +2,13 @@ use std::cell::RefCell;
 
 use bevy::{platform::collections::HashMap, prelude::*};
 use sdl2::{
+    pixels::PixelFormatEnum,
     render::{Canvas, Texture as SdlTexture, TextureCreator},
     video::{Window as SdlWindow, WindowContext},
 };
 
 thread_local! {
-    pub static SDL_REGISTRY: RefCell<Option<SdlRegistry<'static>>> = const { RefCell::new(None) };
+    static SDL_REGISTRY: RefCell<SdlRegistry<'static>> = panic!("SDL_REGISTRY was not initialized");
 }
 
 pub struct SdlRegistry<'a> {
@@ -35,23 +36,56 @@ impl SdlRegistry<'static> {
         let canvas = window.into_canvas().present_vsync().build()?;
         let texture_creator = canvas.texture_creator();
         let textures = HashMap::new();
-        SDL_REGISTRY.with(move |r| {
-            r.replace(Some(Self {
-                canvas,
-                texture_creator,
-                textures,
-            }));
+        SDL_REGISTRY.set(Self {
+            canvas,
+            texture_creator,
+            textures,
         });
         Ok(())
     }
 
     #[inline]
-    pub fn with_borrow(f: impl FnOnce(&Self)) {
-        SDL_REGISTRY.with_borrow(|r| f(r.as_ref().expect("SDL_REGISTRY was not initialized")));
+    pub fn with_borrow<T>(f: impl FnOnce(&Self) -> T) -> T {
+        SDL_REGISTRY.with_borrow(f)
     }
 
     #[inline]
-    pub fn with_borrow_mut(f: impl FnOnce(&mut Self)) {
-        SDL_REGISTRY.with_borrow_mut(|r| f(r.as_mut().expect("SDL_REGISTRY was not initialized")));
+    pub fn with_borrow_mut<T>(f: impl FnOnce(&mut Self) -> T) -> T {
+        SDL_REGISTRY.with_borrow_mut(f)
+    }
+
+    pub fn clear(&mut self) {
+        self.canvas.clear();
+    }
+
+    pub fn present(&mut self) {
+        self.canvas.present();
+    }
+
+    pub fn remove_texture(&mut self, id: &AssetId<Image>) {
+        self.textures.remove(id);
+    }
+
+    pub fn create_texture(
+        &'static mut self,
+        id: AssetId<Image>,
+        pixel_format: PixelFormatEnum,
+        width: u32,
+        height: u32,
+    ) -> Result<()> {
+        self.textures.insert(
+            id,
+            self.texture_creator
+                .create_texture_static(pixel_format, width, height)?,
+        );
+        Ok(())
+    }
+
+    pub fn modify_texture(&mut self, id: &AssetId<Image>, data: &[u8], pitch: usize) -> Result<()> {
+        let Some(texture) = self.textures.get_mut(id) else {
+            return Err("Texture not found".into());
+        };
+        texture.update(None, data, pitch)?;
+        Ok(())
     }
 }

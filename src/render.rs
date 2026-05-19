@@ -1,14 +1,63 @@
 use std::{num::NonZero, time::Instant};
 
 use bevy::{
-    ecs::system::SystemState, platform::collections::HashMap, prelude::*, time::TimeSender,
+    app::MainScheduleOrder,
+    ecs::{
+        schedule::{ScheduleLabel, SingleThreadedExecutor},
+        system::NonSendMarker,
+    },
+    prelude::*,
+    time::TimeSender,
     window::PrimaryWindow,
 };
 use sdl2::event as sdlevent;
 
-use crate::texture::ImageChanges;
+use crate::{registry::SdlRegistry, texture::SdlTexturePlugin};
 
-pub fn render(mut app: App) -> AppExit {
+pub struct SdlRenderPlugin;
+
+impl Plugin for SdlRenderPlugin {
+    fn build(&self, app: &mut App) {
+        let mut render_schedule = Schedule::new(Render);
+        render_schedule.set_executor(SingleThreadedExecutor::new());
+        app.add_schedule(render_schedule);
+        let mut main_schedule_order = app.world_mut().resource_mut::<MainScheduleOrder>();
+        main_schedule_order.insert_after(Last, Render);
+
+        app.add_plugins(SdlTexturePlugin)
+            .set_runner(runner)
+            .configure_sets(
+                Render,
+                (RenderSystems::Extract, RenderSystems::Render).chain(),
+            )
+            .add_systems(Startup, setup)
+            .add_systems(Render, send_time.after(RenderSystems::Render));
+    }
+}
+
+#[derive(ScheduleLabel, Debug, Hash, PartialEq, Eq, Clone)]
+pub struct Render;
+
+#[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
+pub enum RenderSystems {
+    Extract,
+    Render,
+}
+
+fn setup(
+    primary_window: Single<&Window, With<PrimaryWindow>>,
+    _non_send: NonSendMarker,
+) -> Result<()> {
+    SdlRegistry::init(*primary_window)?;
+    Ok(())
+}
+
+fn send_time(time_sender: Res<TimeSender>) -> Result<()> {
+    time_sender.0.send(Instant::now())?;
+    Ok(())
+}
+
+pub fn runner(mut app: App) -> AppExit {
     app.finish();
     app.cleanup();
 
@@ -22,39 +71,9 @@ pub fn render(mut app: App) -> AppExit {
 }
 
 fn event_loop(mut app: App) -> Result<()> {
-    let sdl_context = sdl2::init()?;
-    let video_subsystem = sdl_context.video()?;
+    app.update();
 
-    let time_sender = app
-        .world()
-        .get_resource::<TimeSender>()
-        .ok_or("TimeSender not found")?
-        .0
-        .clone();
-
-    let world = app.world_mut();
-    let mut query = world.query_filtered::<&Window, With<PrimaryWindow>>();
-    let primary_window = query.single(world)?;
-
-    let window = video_subsystem
-        .window(
-            &primary_window.title,
-            primary_window.resolution.physical_width(),
-            primary_window.resolution.physical_height(),
-        )
-        .position_centered()
-        .opengl()
-        .build()?;
-
-    //XXX .accelerated()?
-    let mut canvas = window.into_canvas().present_vsync().build()?;
-    let texture_creator = canvas.texture_creator();
-    let mut textures = HashMap::new();
-
-    let mut system_state: SystemState<(ResMut<ImageChanges>, Res<Assets<Image>>)> =
-        SystemState::new(app.world_mut());
-
-    let mut event_pump = sdl_context.event_pump()?;
+    let mut event_pump = SdlRegistry::with_borrow(|registry| registry.event_pump())?;
     'running: loop {
         for event in event_pump.poll_iter() {
             //XXX send events into bevy
@@ -64,16 +83,14 @@ fn event_loop(mut app: App) -> Result<()> {
             }
         }
 
-        time_sender.send(Instant::now())?;
         app.update();
 
-        let (mut changes, images) = system_state.get_mut(app.world_mut())?;
-        changes.update_textures(&mut textures, images, &texture_creator)?;
-
-        //XXX set clear color
-        canvas.clear();
-        //XXX copy/draw textures based on sprite positions
-        canvas.present();
+        SdlRegistry::with_borrow_mut(|registry| {
+            //XXX set clear color
+            registry.clear();
+            //XXX copy/draw textures based on sprite positions
+            registry.present();
+        });
     }
     Ok(())
 }
