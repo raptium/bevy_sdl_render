@@ -2,6 +2,7 @@ use std::cell::RefCell;
 
 use bevy::{platform::collections::HashMap, prelude::*};
 use sdl2::{
+    EventPump,
     pixels::PixelFormatEnum,
     render::{Canvas, Texture as SdlTexture, TextureCreator},
     video::{Window as SdlWindow, WindowContext},
@@ -12,6 +13,7 @@ thread_local! {
 }
 
 pub struct SdlRegistry<'a> {
+    context: sdl2::Sdl,
     canvas: Canvas<SdlWindow>,
     texture_creator: TextureCreator<WindowContext>,
     textures: HashMap<AssetId<Image>, SdlTexture<'a>>,
@@ -19,8 +21,8 @@ pub struct SdlRegistry<'a> {
 
 impl SdlRegistry<'static> {
     pub fn init(primary_window: &Window) -> Result<()> {
-        let sdl_context = sdl2::init()?;
-        let video_subsystem = sdl_context.video()?;
+        let context = sdl2::init()?;
+        let video_subsystem = context.video()?;
 
         let window = video_subsystem
             .window(
@@ -37,6 +39,7 @@ impl SdlRegistry<'static> {
         let texture_creator = canvas.texture_creator();
         let textures = HashMap::new();
         SDL_REGISTRY.set(Self {
+            context,
             canvas,
             texture_creator,
             textures,
@@ -52,6 +55,10 @@ impl SdlRegistry<'static> {
     #[inline]
     pub fn with_borrow_mut<T>(f: impl FnOnce(&mut Self) -> T) -> T {
         SDL_REGISTRY.with_borrow_mut(f)
+    }
+
+    pub fn event_pump(&self) -> Result<EventPump> {
+        Ok(self.context.event_pump()?)
     }
 
     pub fn clear(&mut self) {
