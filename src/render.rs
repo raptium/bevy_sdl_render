@@ -5,10 +5,7 @@ use std::{
 
 use bevy::{
     app::MainScheduleOrder,
-    ecs::{
-        schedule::{ScheduleLabel, SingleThreadedExecutor},
-        system::NonSendMarker,
-    },
+    ecs::schedule::{ScheduleLabel, SingleThreadedExecutor},
     platform::thread,
     prelude::*,
     time::TimeSender,
@@ -94,12 +91,16 @@ fn send_time(time_sender: Res<TimeSender>) -> Result<()> {
     Ok(())
 }
 
-fn render(sprites: Query<(&Sprite, &GlobalTransform)>) -> Result<()> {
+fn render(
+    camera: Single<(&Camera, &GlobalTransform), With<Camera2d>>,
+    sprites: Query<(&Sprite, &GlobalTransform)>,
+) -> Result<()> {
+    let (camera, camera_transform) = *camera;
     SdlRegistry::with_borrow_mut(|registry| -> Result<()> {
         //XXX set clear color?
         registry.clear();
-        for (sprite, transform) in sprites {
-            registry.render_sprite(sprite, transform)?;
+        for (sprite, sprite_transform) in sprites {
+            registry.render_sprite(sprite, camera, camera_transform, sprite_transform)?;
         }
         registry.present();
         Ok(())

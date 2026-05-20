@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use bevy::{math::EulerRot, platform::collections::HashMap, prelude::*};
+use bevy::{platform::collections::HashMap, prelude::*};
 use sdl2::{
     EventPump, VideoSubsystem,
     event::EventPollIterator,
@@ -15,7 +15,6 @@ thread_local! {
 }
 
 pub struct SdlRegistry<'a> {
-    context: sdl2::Sdl,
     video_subsystem: VideoSubsystem,
     canvas: Canvas<SdlWindow>,
     texture_creator: &'static TextureCreator<WindowContext>,
@@ -44,7 +43,6 @@ impl SdlRegistry<'static> {
             Box::leak(Box::new(canvas.texture_creator()));
         SDL_REGISTRY.set(Self {
             event_pump: context.event_pump()?,
-            context,
             video_subsystem,
             canvas,
             texture_creator,
@@ -107,7 +105,13 @@ impl SdlRegistry<'static> {
         Ok(())
     }
 
-    pub fn render_sprite(&mut self, sprite: &Sprite, transform: &GlobalTransform) -> Result<()> {
+    pub fn render_sprite(
+        &mut self,
+        sprite: &Sprite,
+        camera: &Camera,
+        camera_transform: &GlobalTransform,
+        sprite_transform: &GlobalTransform,
+    ) -> Result<()> {
         //XXX sprite.image can be Handle::default()
         let Some(texture) = self.textures.get(&sprite.image.id()) else {
             return Err("Texture not found".into());
@@ -133,20 +137,40 @@ impl SdlRegistry<'static> {
         };
 
         let sprite_size = sprite.custom_size.unwrap_or(sprite_size);
-        let (scale, rotation, translation) = transform.to_scale_rotation_translation();
-        let width = sprite_size.x * scale.x.abs();
-        let height = sprite_size.y * scale.y.abs();
+        let (scale, rotation, translation) = sprite_transform.to_scale_rotation_translation();
+        let viewport_scale = camera.target_scaling_factor().unwrap_or(1.0);
+        let to_sdl_point = |world_position| -> Option<Vec2> {
+            camera
+                .world_to_viewport(camera_transform, world_position)
+                .ok()
+                .map(|position| position * viewport_scale)
+        };
+
+        let Some(center_position) = to_sdl_point(translation) else {
+            return Ok(());
+        };
+        let right_position =
+            to_sdl_point(translation + rotation * Vec3::X * sprite_size.x * scale.x.abs())
+                .unwrap_or(center_position);
+        let up_position =
+            to_sdl_point(translation + rotation * Vec3::Y * sprite_size.y * scale.y.abs())
+                .unwrap_or(center_position);
+
+        let right = right_position - center_position;
+        let up = up_position - center_position;
+        let width = right.length();
+        let height = up.length();
         if width <= 0.0 || height <= 0.0 {
             return Ok(());
         }
 
         let dst = FRect::new(
-            translation.x - width / 2.0,
-            translation.y - height / 2.0,
+            center_position.x - width / 2.0,
+            center_position.y - height / 2.0,
             width,
             height,
         );
-        let angle = -rotation.to_euler(EulerRot::XYZ).2.to_degrees() as f64;
+        let angle = right.y.atan2(right.x).to_degrees() as f64;
         let center = FPoint::new(width / 2.0, height / 2.0);
 
         self.canvas.copy_ex_f(
