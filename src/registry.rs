@@ -1,11 +1,11 @@
 use std::cell::RefCell;
 
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{math::EulerRot, platform::collections::HashMap, prelude::*};
 use sdl2::{
     EventPump, VideoSubsystem,
     event::EventPollIterator,
     pixels::PixelFormatEnum,
-    rect::Rect as SdlRect,
+    rect::{FPoint, FRect, Rect as SdlRect},
     render::{Canvas, Texture as SdlTexture, TextureCreator},
     video::{DisplayMode, Window as SdlWindow, WindowContext},
 };
@@ -107,18 +107,47 @@ impl SdlRegistry<'static> {
         Ok(())
     }
 
-    pub fn render_sprite(&self, sprite: &Sprite, transform: &GlobalTransform) -> Result<()> {
+    pub fn render_sprite(&mut self, sprite: &Sprite, transform: &GlobalTransform) -> Result<()> {
         //XXX sprite.image can be Handle::default()
         let Some(texture) = self.textures.get(&sprite.image.id()) else {
             return Err("Texture not found".into());
         };
-        let src = if let Some(size) = sprite.custom_size {
-            SdlRect::new(0, 0, size.x as u32, size.y as u32)
+
+        let texinfo = texture.query();
+        let (src, sprite_size) = if let Some(rect) = sprite.rect {
+            let size = rect.size();
+            (
+                SdlRect::new(
+                    rect.min.x as i32,
+                    rect.min.y as i32,
+                    size.x.max(0.0) as u32,
+                    size.y.max(0.0) as u32,
+                ),
+                size,
+            )
         } else {
-            let texinfo = texture.query();
-            SdlRect::new(0, 0, texinfo.width, texinfo.height)
+            (
+                SdlRect::new(0, 0, texinfo.width, texinfo.height),
+                Vec2::new(texinfo.width as f32, texinfo.height as f32),
+            )
         };
+
+        let sprite_size = sprite.custom_size.unwrap_or(sprite_size);
         let (scale, rotation, translation) = transform.to_scale_rotation_translation();
+        let width = sprite_size.x * scale.x.abs();
+        let height = sprite_size.y * scale.y.abs();
+        if width <= 0.0 || height <= 0.0 {
+            return Ok(());
+        }
+
+        let dst = FRect::new(
+            translation.x - width / 2.0,
+            translation.y - height / 2.0,
+            width,
+            height,
+        );
+        let angle = -rotation.to_euler(EulerRot::XYZ).2.to_degrees() as f64;
+        let center = FPoint::new(width / 2.0, height / 2.0);
 
         self.canvas.copy_ex_f(
             texture,
@@ -126,8 +155,8 @@ impl SdlRegistry<'static> {
             dst,
             angle,
             center,
-            sprite.flip_x,
-            sprite.flip_y,
+            sprite.flip_x ^ scale.x.is_sign_negative(),
+            sprite.flip_y ^ scale.y.is_sign_negative(),
         )?;
         Ok(())
     }
