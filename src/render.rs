@@ -5,7 +5,7 @@ use std::{
 
 use bevy::{
     app::MainScheduleOrder,
-    ecs::schedule::{ScheduleLabel, SingleThreadedExecutor},
+    ecs::{schedule::ScheduleLabel, system::NonSendMarker},
     platform::thread,
     prelude::*,
     time::TimeSender,
@@ -19,14 +19,15 @@ pub struct SdlRenderPlugin;
 
 impl Plugin for SdlRenderPlugin {
     fn build(&self, app: &mut App) {
-        let mut render_schedule = Schedule::new(Render);
-        render_schedule.set_executor(SingleThreadedExecutor::new());
-        app.add_schedule(render_schedule);
+        app.add_schedule(Schedule::new(Render));
         let mut main_schedule_order = app.world_mut().resource_mut::<MainScheduleOrder>();
         main_schedule_order.insert_after(Last, Render);
 
+        let (sender, receiver) = bevy::time::create_time_channels();
         app.add_plugins(SdlTexturePlugin)
             .set_runner(runner)
+            .insert_resource(sender)
+            .insert_resource(receiver)
             .configure_sets(
                 Render,
                 (RenderSystems::Extract, RenderSystems::Render).chain(),
@@ -56,6 +57,7 @@ fn sdl_events(
     mut window_resized: MessageWriter<WindowResized>,
     mut window_event: MessageWriter<WindowEvent>,
     mut window: Single<(Entity, &mut Window), With<PrimaryWindow>>,
+    _non_send: NonSendMarker,
 ) {
     SdlRegistry::with_borrow_mut(|registry| {
         for event in registry.events() {
@@ -94,13 +96,21 @@ fn send_time(time_sender: Res<TimeSender>) -> Result<()> {
 fn render(
     camera: Single<(&Camera, &GlobalTransform), With<Camera2d>>,
     sprites: Query<(&Sprite, &GlobalTransform)>,
+    texture_atlases: Res<Assets<TextureAtlasLayout>>,
+    _non_send: NonSendMarker,
 ) -> Result<()> {
     let (camera, camera_transform) = *camera;
     SdlRegistry::with_borrow_mut(|registry| -> Result<()> {
         //XXX set clear color?
         registry.clear();
         for (sprite, sprite_transform) in sprites {
-            registry.render_sprite(sprite, camera, camera_transform, sprite_transform)?;
+            registry.render_sprite(
+                sprite,
+                camera,
+                camera_transform,
+                sprite_transform,
+                texture_atlases.as_ref(),
+            )?;
         }
         registry.present();
         Ok(())

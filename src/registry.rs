@@ -111,14 +111,32 @@ impl SdlRegistry<'static> {
         camera: &Camera,
         camera_transform: &GlobalTransform,
         sprite_transform: &GlobalTransform,
+        texture_atlases: &Assets<TextureAtlasLayout>,
     ) -> Result<()> {
-        //XXX sprite.image can be Handle::default()
+        // XXX not handling sprite.image of Handle::default() (i.e. Sprite::from_color)
+        // XXX also not handling color tinted image
         let Some(texture) = self.textures.get(&sprite.image.id()) else {
-            return Err("Texture not found".into());
+            return Ok(());
         };
 
-        let texinfo = texture.query();
-        let (src, sprite_size) = if let Some(rect) = sprite.rect {
+        let (src, sprite_size) = if let Some(ref texture_atlas) = sprite.texture_atlas
+            && let Some(atlas_rect) = texture_atlas.texture_rect(texture_atlases)
+        {
+            let mut atlas_rect = atlas_rect.as_rect();
+            if let Some(sprite_rect) = sprite.rect {
+                atlas_rect.min += sprite_rect.min;
+                atlas_rect.max += sprite_rect.min;
+            }
+            (
+                SdlRect::new(
+                    atlas_rect.min.x as i32,
+                    atlas_rect.min.y as i32,
+                    atlas_rect.width() as u32,
+                    atlas_rect.height() as u32,
+                ),
+                atlas_rect.size(),
+            )
+        } else if let Some(rect) = sprite.rect {
             let size = rect.size();
             (
                 SdlRect::new(
@@ -130,6 +148,7 @@ impl SdlRegistry<'static> {
                 size,
             )
         } else {
+            let texinfo = texture.query();
             (
                 SdlRect::new(0, 0, texinfo.width, texinfo.height),
                 Vec2::new(texinfo.width as f32, texinfo.height as f32),
