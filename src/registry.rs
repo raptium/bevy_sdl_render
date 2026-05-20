@@ -5,6 +5,7 @@ use sdl2::{
     EventPump, VideoSubsystem,
     event::EventPollIterator,
     pixels::PixelFormatEnum,
+    rect::Rect as SdlRect,
     render::{Canvas, Texture as SdlTexture, TextureCreator},
     video::{DisplayMode, Window as SdlWindow, WindowContext},
 };
@@ -34,11 +35,9 @@ impl SdlRegistry<'static> {
                 primary_window.resolution.physical_height(),
             )
             .position_centered()
-            .opengl()
             .build()?;
 
-        //XXX .accelerated()?
-        let canvas = window.into_canvas().present_vsync().build()?;
+        let canvas = window.into_canvas().accelerated().present_vsync().build()?;
         // Leak the TextureCreator so we can store a static lifetime.
         // We store the textures in a static HashMap, so TextureCreator needs to be static so they don't outlive it
         let texture_creator: &'static TextureCreator<WindowContext> =
@@ -105,6 +104,31 @@ impl SdlRegistry<'static> {
             return Err("Texture not found".into());
         };
         texture.update(None, data, pitch)?;
+        Ok(())
+    }
+
+    pub fn render_sprite(&self, sprite: &Sprite, transform: &GlobalTransform) -> Result<()> {
+        //XXX sprite.image can be Handle::default()
+        let Some(texture) = self.textures.get(&sprite.image.id()) else {
+            return Err("Texture not found".into());
+        };
+        let src = if let Some(size) = sprite.custom_size {
+            SdlRect::new(0, 0, size.x as u32, size.y as u32)
+        } else {
+            let texinfo = texture.query();
+            SdlRect::new(0, 0, texinfo.width, texinfo.height)
+        };
+        let (scale, rotation, translation) = transform.to_scale_rotation_translation();
+
+        self.canvas.copy_ex_f(
+            texture,
+            src,
+            dst,
+            angle,
+            center,
+            sprite.flip_x,
+            sprite.flip_y,
+        )?;
         Ok(())
     }
 }

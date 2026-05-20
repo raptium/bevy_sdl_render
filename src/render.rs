@@ -94,13 +94,17 @@ fn send_time(time_sender: Res<TimeSender>) -> Result<()> {
     Ok(())
 }
 
-fn render() {
-    //XXX set clear color?
-    SdlRegistry::with_borrow_mut(|registry| registry.clear());
-
-    //XXX copy/draw textures based on sprite positions
-
-    SdlRegistry::with_borrow_mut(|registry| registry.present());
+fn render(sprites: Query<(&Sprite, &GlobalTransform)>) -> Result<()> {
+    SdlRegistry::with_borrow_mut(|registry| -> Result<()> {
+        //XXX set clear color?
+        registry.clear();
+        for (sprite, transform) in sprites {
+            registry.render_sprite(sprite, transform)?;
+        }
+        registry.present();
+        Ok(())
+    })?;
+    Ok(())
 }
 
 pub fn runner(mut app: App) -> AppExit {
