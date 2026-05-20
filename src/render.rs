@@ -31,7 +31,13 @@ impl Plugin for SdlRenderPlugin {
                 (RenderSystems::Extract, RenderSystems::Render).chain(),
             )
             .add_systems(Startup, setup)
-            .add_systems(Render, send_time.after(RenderSystems::Render));
+            .add_systems(
+                Render,
+                (
+                    render.in_set(RenderSystems::Render),
+                    send_time.after(RenderSystems::Render),
+                ),
+            );
     }
 }
 
@@ -57,6 +63,15 @@ fn send_time(time_sender: Res<TimeSender>) -> Result<()> {
     Ok(())
 }
 
+fn render() {
+    //XXX set clear color?
+    SdlRegistry::with_borrow_mut(|registry| registry.clear());
+
+    //XXX copy/draw textures based on sprite positions
+
+    SdlRegistry::with_borrow_mut(|registry| registry.present());
+}
+
 pub fn runner(mut app: App) -> AppExit {
     app.finish();
     app.cleanup();
@@ -71,8 +86,6 @@ pub fn runner(mut app: App) -> AppExit {
 }
 
 fn event_loop(mut app: App) -> Result<()> {
-    app.update();
-
     let mut event_pump = SdlRegistry::with_borrow(|registry| registry.event_pump())?;
     'running: loop {
         for event in event_pump.poll_iter() {
@@ -84,13 +97,7 @@ fn event_loop(mut app: App) -> Result<()> {
         }
 
         app.update();
-
-        SdlRegistry::with_borrow_mut(|registry| {
-            //XXX set clear color
-            registry.clear();
-            //XXX copy/draw textures based on sprite positions
-            registry.present();
-        });
+        //XXX need to sleep, see bevy ScheduleRunner
     }
     Ok(())
 }

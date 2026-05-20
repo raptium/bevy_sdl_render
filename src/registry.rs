@@ -9,26 +9,17 @@ use sdl2::{
 };
 
 thread_local! {
-    static SDL_REGISTRY: RefCell<SdlRegistry> = panic!("SDL_REGISTRY was not initialized");
-    static SDL_TEXTURES: RefCell<SdlTextures<'static>> = const { RefCell::new(SdlTextures::new()) };
+    static SDL_REGISTRY: RefCell<SdlRegistry<'static>> = panic!("SDL_REGISTRY was not initialized");
 }
 
-pub struct SdlRegistry {
+pub struct SdlRegistry<'a> {
     context: sdl2::Sdl,
     canvas: Canvas<SdlWindow>,
     texture_creator: &'static TextureCreator<WindowContext>,
+    textures: HashMap<AssetId<Image>, SdlTexture<'a>>,
 }
 
-#[derive(Default, Deref, DerefMut)]
-struct SdlTextures<'a>(HashMap<AssetId<Image>, SdlTexture<'a>>);
-
-impl<'a> SdlTextures<'_> {
-    const fn new() -> Self {
-        Self(HashMap::new())
-    }
-}
-
-impl SdlRegistry {
+impl SdlRegistry<'static> {
     pub fn init(primary_window: &Window) -> Result<()> {
         let context = sdl2::init()?;
         let video_subsystem = context.video()?;
@@ -53,6 +44,7 @@ impl SdlRegistry {
             context,
             canvas,
             texture_creator,
+            textures: HashMap::new(),
         });
         Ok(())
     }
@@ -79,8 +71,8 @@ impl SdlRegistry {
         self.canvas.present();
     }
 
-    pub fn remove_texture(id: &AssetId<Image>) {
-        SDL_TEXTURES.with_borrow_mut(|textures| textures.remove(id));
+    pub fn remove_texture(&mut self, id: &AssetId<Image>) {
+        self.textures.remove(id);
     }
 
     pub fn create_texture(
@@ -90,25 +82,19 @@ impl SdlRegistry {
         width: u32,
         height: u32,
     ) -> Result<()> {
-        SDL_TEXTURES.with_borrow_mut(|textures| -> Result<()> {
-            textures.insert(
-                id,
-                self.texture_creator
-                    .create_texture_static(pixel_format, width, height)?,
-            );
-            Ok(())
-        })?;
+        self.textures.insert(
+            id,
+            self.texture_creator
+                .create_texture_static(pixel_format, width, height)?,
+        );
         Ok(())
     }
 
     pub fn modify_texture(&mut self, id: &AssetId<Image>, data: &[u8], pitch: usize) -> Result<()> {
-        SDL_TEXTURES.with_borrow_mut(|textures| -> Result<()> {
-            let Some(texture) = textures.get_mut(id) else {
-                return Err("Texture not found".into());
-            };
-            texture.update(None, data, pitch)?;
-            Ok(())
-        })?;
+        let Some(texture) = self.textures.get_mut(id) else {
+            return Err("Texture not found".into());
+        };
+        texture.update(None, data, pitch)?;
         Ok(())
     }
 }
