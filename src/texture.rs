@@ -1,4 +1,4 @@
-use bevy::{image::TextureFormatPixelInfo, prelude::*};
+use bevy::{ecs::system::NonSendMarker, image::TextureFormatPixelInfo, prelude::*};
 use sdl2::pixels as sdlpixels;
 
 use crate::{
@@ -10,17 +10,18 @@ pub struct SdlTexturePlugin;
 
 impl Plugin for SdlTexturePlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Render, extract_textures.in_set(RenderSystems::Extract));
+        app.add_systems(Render, prepare_textures.in_set(RenderSystems::Prepare));
     }
 }
 
-fn extract_textures(
+fn prepare_textures(
     mut events: MessageReader<AssetEvent<Image>>,
     images: Res<Assets<Image>>,
+    _non_send: NonSendMarker,
 ) -> Result<()> {
     for event in events.read() {
         match event {
-            AssetEvent::Added { .. } => {}
+            AssetEvent::LoadedWithDependencies { .. } => {}
             AssetEvent::Modified { id } => {
                 SdlRegistry::with_borrow_mut(|registry| -> Result<()> {
                     if let Some(image) = images.get(*id)
@@ -39,7 +40,7 @@ fn extract_textures(
             AssetEvent::Unused { id } => {
                 SdlRegistry::with_borrow_mut(|registry| registry.remove_texture(id))
             }
-            AssetEvent::LoadedWithDependencies { id } => {
+            AssetEvent::Added { id } => {
                 SdlRegistry::with_borrow_mut(|registry| -> Result<()> {
                     if let Some(image) = images.get(*id) {
                         let pixel_format = match image.texture_descriptor.format {

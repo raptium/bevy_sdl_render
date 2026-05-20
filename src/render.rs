@@ -30,7 +30,7 @@ impl Plugin for SdlRenderPlugin {
             .insert_resource(receiver)
             .configure_sets(
                 Render,
-                (RenderSystems::Extract, RenderSystems::Render).chain(),
+                (RenderSystems::Prepare, RenderSystems::Render).chain(),
             )
             .add_systems(First, sdl_events)
             .add_systems(
@@ -48,7 +48,7 @@ pub struct Render;
 
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub enum RenderSystems {
-    Extract,
+    Prepare,
     Render,
 }
 
