@@ -1,4 +1,7 @@
-use std::{num::NonZero, time::Instant};
+use std::{
+    num::NonZero,
+    time::{Duration, Instant},
+};
 
 use bevy::{
     app::MainScheduleOrder,
@@ -6,9 +9,10 @@ use bevy::{
         schedule::{ScheduleLabel, SingleThreadedExecutor},
         system::NonSendMarker,
     },
+    platform::thread,
     prelude::*,
     time::TimeSender,
-    window::PrimaryWindow,
+    window::{PrimaryWindow, WindowEvent, WindowResized},
 };
 use sdl2::event as sdlevent;
 
@@ -30,7 +34,7 @@ impl Plugin for SdlRenderPlugin {
                 Render,
                 (RenderSystems::Extract, RenderSystems::Render).chain(),
             )
-            .add_systems(Startup, setup)
+            .add_systems(First, sdl_events)
             .add_systems(
                 Render,
                 (
@@ -50,12 +54,39 @@ pub enum RenderSystems {
     Render,
 }
 
-fn setup(
-    primary_window: Single<&Window, With<PrimaryWindow>>,
-    _non_send: NonSendMarker,
-) -> Result<()> {
-    SdlRegistry::init(*primary_window)?;
-    Ok(())
+fn sdl_events(
+    mut app_exit_writer: MessageWriter<AppExit>,
+    mut window_resized: MessageWriter<WindowResized>,
+    mut window_event: MessageWriter<WindowEvent>,
+    mut window: Single<(Entity, &mut Window), With<PrimaryWindow>>,
+) {
+    SdlRegistry::with_borrow_mut(|registry| {
+        for event in registry.events() {
+            match event {
+                sdlevent::Event::Quit { .. } => {
+                    app_exit_writer.write(AppExit::Success);
+                }
+                sdlevent::Event::Window {
+                    win_event: sdlevent::WindowEvent::SizeChanged(width, height),
+                    ..
+                } => {
+                    // We just support a single window
+                    let (entity, ref mut window) = *window;
+                    window
+                        .resolution
+                        .set_physical_resolution(width as u32, height as u32);
+                    let event = WindowResized {
+                        window: entity,
+                        width: width as f32,
+                        height: height as f32,
+                    };
+                    window_resized.write(event.clone());
+                    window_event.write(WindowEvent::WindowResized(event));
+                }
+                _ => (),
+            }
+        }
+    });
 }
 
 fn send_time(time_sender: Res<TimeSender>) -> Result<()> {
@@ -77,7 +108,7 @@ pub fn runner(mut app: App) -> AppExit {
     app.cleanup();
 
     match event_loop(app) {
-        Ok(_) => AppExit::Success,
+        Ok(exit) => exit,
         Err(e) => {
             error!("Error: {e:?}");
             AppExit::Error(NonZero::new(1u8).unwrap())
@@ -85,19 +116,30 @@ pub fn runner(mut app: App) -> AppExit {
     }
 }
 
-fn event_loop(mut app: App) -> Result<()> {
-    let mut event_pump = SdlRegistry::with_borrow(|registry| registry.event_pump())?;
-    'running: loop {
-        for event in event_pump.poll_iter() {
-            //XXX send events into bevy
-            match event {
-                sdlevent::Event::Quit { .. } => break 'running,
-                _ => (),
-            }
-        }
+fn event_loop(mut app: App) -> Result<AppExit> {
+    let world = app.world_mut();
+    let mut query = world.query_filtered::<&Window, With<PrimaryWindow>>();
+    let primary_window = query.single(world)?;
+    SdlRegistry::init(primary_window)?;
 
+    let refresh_rate = SdlRegistry::with_borrow(|registry| registry.display_mode())?.refresh_rate;
+    let wait = Duration::from_secs_f32(if refresh_rate > 0 {
+        1.0 / refresh_rate as f32
+    } else {
+        0.0
+    });
+
+    loop {
+        let start_time = Instant::now();
         app.update();
-        //XXX need to sleep, see bevy ScheduleRunner
+        if let Some(exit) = app.should_exit() {
+            return Ok(exit);
+        }
+        let end_time = Instant::now();
+
+        let exe_time = end_time - start_time;
+        if exe_time < wait {
+            thread::sleep(wait - exe_time);
+        }
     }
-    Ok(())
 }

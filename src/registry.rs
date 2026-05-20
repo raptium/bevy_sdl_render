@@ -2,10 +2,11 @@ use std::cell::RefCell;
 
 use bevy::{platform::collections::HashMap, prelude::*};
 use sdl2::{
-    EventPump,
+    EventPump, VideoSubsystem,
+    event::EventPollIterator,
     pixels::PixelFormatEnum,
     render::{Canvas, Texture as SdlTexture, TextureCreator},
-    video::{Window as SdlWindow, WindowContext},
+    video::{DisplayMode, Window as SdlWindow, WindowContext},
 };
 
 thread_local! {
@@ -14,9 +15,11 @@ thread_local! {
 
 pub struct SdlRegistry<'a> {
     context: sdl2::Sdl,
+    video_subsystem: VideoSubsystem,
     canvas: Canvas<SdlWindow>,
     texture_creator: &'static TextureCreator<WindowContext>,
     textures: HashMap<AssetId<Image>, SdlTexture<'a>>,
+    event_pump: EventPump,
 }
 
 impl SdlRegistry<'static> {
@@ -41,7 +44,9 @@ impl SdlRegistry<'static> {
         let texture_creator: &'static TextureCreator<WindowContext> =
             Box::leak(Box::new(canvas.texture_creator()));
         SDL_REGISTRY.set(Self {
+            event_pump: context.event_pump()?,
             context,
+            video_subsystem,
             canvas,
             texture_creator,
             textures: HashMap::new(),
@@ -59,8 +64,13 @@ impl SdlRegistry<'static> {
         SDL_REGISTRY.with_borrow_mut(f)
     }
 
-    pub fn event_pump(&self) -> Result<EventPump> {
-        Ok(self.context.event_pump()?)
+    pub fn display_mode(&self) -> Result<DisplayMode> {
+        let display_index = self.canvas.window().display_index()?;
+        Ok(self.video_subsystem.current_display_mode(display_index)?)
+    }
+
+    pub fn events(&mut self) -> EventPollIterator<'_> {
+        self.event_pump.poll_iter()
     }
 
     pub fn clear(&mut self) {
