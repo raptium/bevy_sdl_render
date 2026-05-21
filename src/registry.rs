@@ -61,6 +61,10 @@ impl SdlRegistry<'static> {
         SDL_REGISTRY.with_borrow_mut(f)
     }
 
+    pub fn window(&self) -> &SdlWindow {
+        self.canvas.window()
+    }
+
     pub fn display_mode(&self) -> Result<DisplayMode> {
         let display_index = self.canvas.window().display_index()?;
         Ok(self.video_subsystem.current_display_mode(display_index)?)

@@ -5,12 +5,13 @@ use std::{
 
 use bevy::{
     app::{MainScheduleOrder, PluginsState},
+    camera::{RenderTarget, RenderTargetInfo},
     ecs::{schedule::ScheduleLabel, system::NonSendMarker},
     image::{CompressedImageFormats, ImageLoader},
     platform::thread,
     prelude::*,
     time::TimeSender,
-    window::{PrimaryWindow, WindowEvent, WindowResized},
+    window::{PrimaryWindow, WindowEvent, WindowRef, WindowResized},
 };
 use sdl2::event as sdlevent;
 
@@ -60,8 +61,10 @@ fn sdl_events(
     mut window_resized: MessageWriter<WindowResized>,
     mut window_event: MessageWriter<WindowEvent>,
     mut window: Single<(Entity, &mut Window), With<PrimaryWindow>>,
+    mut camera: Single<(&mut Camera, &RenderTarget), With<Camera2d>>,
     _non_send: NonSendMarker,
-) {
+) -> Result<()> {
+    let mut resize = false;
     SdlRegistry::with_borrow_mut(|registry| {
         for event in registry.events() {
             match event {
@@ -69,26 +72,44 @@ fn sdl_events(
                     app_exit_writer.write(AppExit::Success);
                 }
                 sdlevent::Event::Window {
-                    win_event: sdlevent::WindowEvent::SizeChanged(width, height),
+                    win_event: sdlevent::WindowEvent::Shown,
                     ..
-                } => {
-                    // We just support a single window
-                    let (entity, ref mut window) = *window;
-                    window
-                        .resolution
-                        .set_physical_resolution(width as u32, height as u32);
-                    let event = WindowResized {
-                        window: entity,
-                        width: width as f32,
-                        height: height as f32,
-                    };
-                    window_resized.write(event.clone());
-                    window_event.write(WindowEvent::WindowResized(event));
                 }
+                | sdlevent::Event::Window {
+                    win_event: sdlevent::WindowEvent::SizeChanged(..),
+                    ..
+                } => resize = true,
                 _ => (),
             }
         }
     });
+
+    if resize {
+        let (width, height) = SdlRegistry::with_borrow(|registry| registry.window().size());
+        // We just support a single window
+        let (window_entity, ref mut window) = *window;
+        window.resolution.set_physical_resolution(width, height);
+
+        let (ref mut camera, render_target) = *camera;
+        if matches!(render_target, RenderTarget::Window(WindowRef::Primary)) {
+            let computed_target_info = RenderTargetInfo {
+                physical_size: window.physical_size(),
+                scale_factor: window.resolution.scale_factor(),
+            };
+            camera.computed.target_info = Some(computed_target_info);
+        } else {
+            return Err("Unsupported RenderTarget".into());
+        }
+
+        let event = WindowResized {
+            window: window_entity,
+            width: width as f32,
+            height: height as f32,
+        };
+        window_resized.write(event.clone());
+        window_event.write(WindowEvent::WindowResized(event));
+    }
+    Ok(())
 }
 
 fn send_time(time_sender: Res<TimeSender>) -> Result<()> {
