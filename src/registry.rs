@@ -6,7 +6,7 @@ use sdl2::{
     event::EventPollIterator,
     pixels::{Color as SdlColor, PixelFormatEnum},
     rect::{FPoint, FRect, Rect as SdlRect},
-    render::{Canvas, Texture as SdlTexture, TextureCreator},
+    render::{BlendMode, Canvas, Texture as SdlTexture, TextureCreator},
     video::{DisplayMode, Window as SdlWindow, WindowContext},
 };
 
@@ -36,7 +36,9 @@ impl SdlRegistry<'static> {
             .position_centered()
             .build()?;
 
-        let canvas = window.into_canvas().accelerated().present_vsync().build()?;
+        let mut canvas = window.into_canvas().accelerated().present_vsync().build()?;
+        canvas.set_blend_mode(BlendMode::Blend);
+
         // Leak the TextureCreator so we can store a static lifetime.
         // We store the textures in a static HashMap, so TextureCreator needs to be static so they don't outlive it
         let texture_creator: &'static TextureCreator<WindowContext> =
@@ -102,11 +104,11 @@ impl SdlRegistry<'static> {
         width: u32,
         height: u32,
     ) -> Result<()> {
-        self.textures.insert(
-            id,
+        let mut texture =
             self.texture_creator
-                .create_texture_static(pixel_format, width, height)?,
-        );
+                .create_texture_static(pixel_format, width, height)?;
+        texture.set_blend_mode(BlendMode::Blend);
+        self.textures.insert(id, texture);
         Ok(())
     }
 
