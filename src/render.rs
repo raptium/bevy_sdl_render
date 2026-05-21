@@ -132,12 +132,18 @@ fn render(
     camera: Single<(&Camera, &GlobalTransform), With<Camera2d>>,
     sprites: Query<(&Sprite, &GlobalTransform)>,
     texture_atlases: Res<Assets<TextureAtlasLayout>>,
+    clear_color: Res<ClearColor>,
     _non_send: NonSendMarker,
 ) -> Result<()> {
     let (camera, camera_transform) = *camera;
     SdlRegistry::with_borrow_mut(|registry| -> Result<()> {
-        //XXX set clear color?
-        registry.clear();
+        let clear = match camera.clear_color {
+            ClearColorConfig::Default => Some(clear_color.0),
+            ClearColorConfig::Custom(color) => Some(color),
+            ClearColorConfig::None => None,
+        };
+        registry.clear(clear);
+
         for (sprite, sprite_transform) in sprites {
             registry.render_sprite(
                 sprite,

@@ -1,4 +1,4 @@
-use bevy::prelude::*;
+use bevy::{color::palettes::css, prelude::*};
 use bevy_sdl_render::SdlRenderPlugin;
 
 fn main() {
@@ -51,7 +51,13 @@ fn setup(
     // Use only the subset of sprites in the sheet that make up the run animation
     let animation_indices = AnimationIndices { first: 1, last: 6 };
 
-    commands.spawn(Camera2d);
+    commands.spawn((
+        Camera2d,
+        Camera {
+            clear_color: Color::from(css::BLUE).into(),
+            ..default()
+        },
+    ));
 
     commands.spawn((
         Sprite::from_atlas_image(

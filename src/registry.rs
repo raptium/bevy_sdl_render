@@ -4,7 +4,7 @@ use bevy::{platform::collections::HashMap, prelude::*};
 use sdl2::{
     EventPump, VideoSubsystem,
     event::EventPollIterator,
-    pixels::PixelFormatEnum,
+    pixels::{Color as SdlColor, PixelFormatEnum},
     rect::{FPoint, FRect, Rect as SdlRect},
     render::{Canvas, Texture as SdlTexture, TextureCreator},
     video::{DisplayMode, Window as SdlWindow, WindowContext},
@@ -74,8 +74,17 @@ impl SdlRegistry<'static> {
         self.event_pump.poll_iter()
     }
 
-    pub fn clear(&mut self) {
-        self.canvas.clear();
+    pub fn clear(&mut self, color: Option<Color>) {
+        if let Some(color) = color {
+            let rgba = LinearRgba::from(color);
+            self.canvas.set_draw_color(SdlColor {
+                r: (rgba.red * 255.0) as u8,
+                g: (rgba.green * 255.0) as u8,
+                b: (rgba.blue * 255.0) as u8,
+                a: (rgba.alpha * 255.0) as u8,
+            });
+            self.canvas.clear();
+        }
     }
 
     pub fn present(&mut self) {
