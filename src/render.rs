@@ -61,10 +61,10 @@ fn sdl_events(
     mut window_resized: MessageWriter<WindowResized>,
     mut window_event: MessageWriter<WindowEvent>,
     mut window: Single<(Entity, &mut Window), With<PrimaryWindow>>,
-    mut camera: Single<(&mut Camera, &RenderTarget), With<Camera2d>>,
+    mut camera: Single<(&mut Camera, &RenderTarget, &mut Projection), With<Camera2d>>,
     _non_send: NonSendMarker,
 ) -> Result<()> {
-    let mut resize = false;
+    let mut sized = false;
     SdlRegistry::with_borrow_mut(|registry| {
         for event in registry.events() {
             match event {
@@ -78,28 +78,17 @@ fn sdl_events(
                 | sdlevent::Event::Window {
                     win_event: sdlevent::WindowEvent::SizeChanged(..),
                     ..
-                } => resize = true,
+                } => sized = true,
                 _ => (),
             }
         }
     });
 
-    if resize {
+    if sized {
         let (width, height) = SdlRegistry::with_borrow(|registry| registry.window().size());
         // We just support a single window
         let (window_entity, ref mut window) = *window;
         window.resolution.set_physical_resolution(width, height);
-
-        let (ref mut camera, render_target) = *camera;
-        if matches!(render_target, RenderTarget::Window(WindowRef::Primary)) {
-            let computed_target_info = RenderTargetInfo {
-                physical_size: window.physical_size(),
-                scale_factor: window.resolution.scale_factor(),
-            };
-            camera.computed.target_info = Some(computed_target_info);
-        } else {
-            return Err("Unsupported RenderTarget".into());
-        }
 
         let event = WindowResized {
             window: window_entity,
@@ -108,7 +97,29 @@ fn sdl_events(
         };
         window_resized.write(event.clone());
         window_event.write(WindowEvent::WindowResized(event));
+
+        let (ref mut camera, render_target, ref mut camera_projection) = *camera;
+        if !matches!(render_target, RenderTarget::Window(WindowRef::Primary)) {
+            return Err("Unsupported RenderTarget".into());
+        }
+
+        camera.computed.target_info = Some(RenderTargetInfo {
+            physical_size: window.physical_size(),
+            scale_factor: window.resolution.scale_factor(),
+        });
+
+        if let Some(logical_viewport_size) = camera.logical_viewport_size()
+            && logical_viewport_size.x != 0.0
+            && logical_viewport_size.y != 0.0
+        {
+            camera_projection.update(logical_viewport_size.x, logical_viewport_size.y);
+            camera.computed.clip_from_view = match &camera.sub_camera_view {
+                Some(sub_view) => camera_projection.get_clip_from_view_for_sub(sub_view),
+                None => camera_projection.get_clip_from_view(),
+            };
+        }
     }
+
     Ok(())
 }
 
