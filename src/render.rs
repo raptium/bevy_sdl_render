@@ -150,11 +150,10 @@ fn event_loop(mut app: App) -> Result<AppExit> {
         if let Some(exit) = app.should_exit() {
             return Ok(exit);
         }
-        let end_time = Instant::now();
 
-        let exe_time = end_time - start_time;
-        if exe_time < wait {
-            thread::sleep(wait - exe_time);
+        let elapsed = start_time.elapsed();
+        if elapsed < wait {
+            thread::sleep(wait - elapsed);
         }
     }
 }
