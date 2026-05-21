@@ -4,8 +4,9 @@ use std::{
 };
 
 use bevy::{
-    app::MainScheduleOrder,
+    app::{MainScheduleOrder, PluginsState},
     ecs::{schedule::ScheduleLabel, system::NonSendMarker},
+    image::{CompressedImageFormats, ImageLoader},
     platform::thread,
     prelude::*,
     time::TimeSender,
@@ -28,6 +29,8 @@ impl Plugin for SdlRenderPlugin {
             .set_runner(runner)
             .insert_resource(sender)
             .insert_resource(receiver)
+            // bevy_render usually registers this
+            .register_asset_loader(ImageLoader::new(CompressedImageFormats::NONE))
             .configure_sets(
                 Render,
                 (RenderSystems::Prepare, RenderSystems::Render).chain(),
@@ -119,8 +122,13 @@ fn render(
 }
 
 pub fn runner(mut app: App) -> AppExit {
-    app.finish();
-    app.cleanup();
+    if app.plugins_state() != PluginsState::Cleaned {
+        while app.plugins_state() == PluginsState::Adding {
+            bevy::tasks::tick_global_task_pools_on_main_thread();
+        }
+        app.finish();
+        app.cleanup();
+    }
 
     match event_loop(app) {
         Ok(exit) => exit,
