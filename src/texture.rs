@@ -1,4 +1,4 @@
-use bevy::{ecs::system::NonSendMarker, image::TextureFormatPixelInfo, prelude::*};
+use bevy::{ecs::system::NonSendMarker, prelude::*};
 use sdl2::pixels as sdlpixels;
 
 use crate::{
@@ -24,12 +24,8 @@ fn prepare_textures(
             AssetEvent::LoadedWithDependencies { .. } => {}
             AssetEvent::Modified { id } => {
                 SdlRegistry::with_borrow_mut(|registry| -> Result<()> {
-                    if let Some(image) = images.get(*id)
-                        && let Some(ref data) = image.data
-                        && let Ok(pixel_size) = image.texture_descriptor.format.pixel_size()
-                    {
-                        let pitch = pixel_size * image.width() as usize;
-                        registry.modify_texture(id, data.as_slice(), pitch)?;
+                    if let Some(image) = images.get(*id) {
+                        registry.modify_texture_from_image(id, image)?
                     }
                     Ok(())
                 })?;
@@ -58,6 +54,7 @@ fn prepare_textures(
                             image.width(),
                             image.height(),
                         )?;
+                        registry.modify_texture_from_image(id, image)?;
                     }
                     Ok(())
                 })?;

@@ -1,6 +1,6 @@
 use std::cell::RefCell;
 
-use bevy::{platform::collections::HashMap, prelude::*};
+use bevy::{image::TextureFormatPixelInfo, platform::collections::HashMap, prelude::*};
 use sdl2::{
     EventPump, VideoSubsystem,
     event::EventPollIterator,
@@ -115,6 +115,16 @@ impl SdlRegistry<'static> {
             return Err("Texture not found".into());
         };
         texture.update(None, data, pitch)?;
+        Ok(())
+    }
+
+    pub fn modify_texture_from_image(&mut self, id: &AssetId<Image>, image: &Image) -> Result<()> {
+        if let Some(ref data) = image.data
+            && let Ok(pixel_size) = image.texture_descriptor.format.pixel_size()
+        {
+            let pitch = pixel_size * image.width() as usize;
+            self.modify_texture(id, data.as_slice(), pitch)?;
+        }
         Ok(())
     }
 
