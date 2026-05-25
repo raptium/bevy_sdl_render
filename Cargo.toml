@@ -6,7 +6,19 @@ edition = "2024"
 [features]
 debug = ["bevy/debug"]
 
+[workspace.dependencies]
+bevy = { version = "0.19.0-rc.2", default-features = false, features = ["default_app", "std", "multi_threaded", "bevy_asset", "bevy_image", "bevy_window", "bevy_sprite"] }
+
 [dependencies]
-bevy = { version = "0.19.0-rc.1", default-features = false, features = ["default_app", "std", "multi_threaded", "bevy_asset", "bevy_image", "bevy_window", "bevy_sprite"] }
+bevy = { workspace = true }
 sdl2 = { version = "0.38.0", features = ["use-pkgconfig"] }
 wgpu-types = { version = "29.0.3", default-features = false }
+
+[dev-dependencies]
+bevy = { workspace = true, features = ["png", "bevy_gilrs"] }
+
+[workspace.metadata.cross.target.aarch64-unknown-linux-gnu]
+pre-build = [
+    "dpkg --add-architecture $CROSS_DEB_ARCH",
+    "apt-get update && apt-get --assume-yes install libsdl2-dev:$CROSS_DEB_ARCH"
+]
