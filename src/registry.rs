@@ -43,8 +43,9 @@ impl SdlRegistry<'static> {
         // We store the textures in a static HashMap, so TextureCreator needs to be static so they don't outlive it
         let texture_creator: &'static TextureCreator<WindowContext> =
             Box::leak(Box::new(canvas.texture_creator()));
+        let event_pump = context.event_pump()?;
         SDL_REGISTRY.set(Self {
-            event_pump: context.event_pump()?,
+            event_pump,
             video_subsystem,
             canvas,
             texture_creator,

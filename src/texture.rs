@@ -1,5 +1,6 @@
-use bevy::{ecs::system::NonSendMarker, prelude::*};
+use bevy::{asset::RenderAssetUsages, ecs::system::NonSendMarker, prelude::*};
 use sdl2::pixels as sdlpixels;
+use wgpu_types::{Extent3d, TextureDimension, TextureFormat};
 
 use crate::{
     registry::SdlRegistry,
@@ -62,4 +63,22 @@ fn prepare_textures(
         }
     }
     Ok(())
+}
+
+pub trait FromColor {
+    fn from_color(color: Color) -> Self;
+}
+
+impl FromColor for Image {
+    fn from_color(color: Color) -> Self {
+        let rgba: Srgba = color.into();
+        let data = rgba.to_u8_array().to_vec();
+        Image::new(
+            Extent3d::default(),
+            TextureDimension::D2,
+            data,
+            TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::default(),
+        )
+    }
 }

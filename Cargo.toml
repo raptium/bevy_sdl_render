@@ -15,7 +15,7 @@ sdl2 = { version = "0.38.0", features = ["use-pkgconfig"] }
 wgpu-types = { version = "29.0.3", default-features = false }
 
 [dev-dependencies]
-bevy = { workspace = true, features = ["png", "bevy_gilrs"] }
+bevy = { workspace = true, features = ["png", "bevy_gilrs", "scene"] }
 
 [workspace.metadata.cross.target.aarch64-unknown-linux-gnu]
 pre-build = [

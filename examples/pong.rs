@@ -3,7 +3,7 @@ use bevy::{
     prelude::*,
     window::{PrimaryWindow, WindowResized, WindowResolution},
 };
-use bevy_sdl_render::SdlRenderPlugin;
+use bevy_sdl_render::{FromColor, SdlRenderPlugin};
 
 #[derive(Component, Clone, Default)]
 struct Paddle {
@@ -61,10 +61,11 @@ fn main() {
         .run();
 }
 
-fn setup(mut commands: Commands) {
+fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     commands.spawn(Camera2d);
-    commands.spawn_scene(paddle(Side::Left));
-    commands.spawn_scene(paddle(Side::Right));
+    let paddle_image = images.add(Image::from_color(Color::srgb(1., 0., 0.)));
+    commands.spawn_scene(paddle(Side::Left, paddle_image.clone()));
+    commands.spawn_scene(paddle(Side::Right, paddle_image));
 
     // Ball
     commands.spawn((
@@ -77,7 +78,7 @@ fn setup(mut commands: Commands) {
     ));
 }
 
-fn paddle(side: Side) -> impl Scene {
+fn paddle(side: Side, image: Handle<Image>) -> impl Scene {
     let x = match side {
         Side::Left => -(WINDOW_SIZE.0 as f32 / 2.0),
         Side::Right => WINDOW_SIZE.0 as f32 / 2.0,
@@ -88,7 +89,7 @@ fn paddle(side: Side) -> impl Scene {
             side: side,
         }
         Sprite {
-            color: Color::WHITE,
+            image: image,
             custom_size: Vec2::new(10.0, 100.0),
         }
         Transform::from_xyz(x, 0.0, 0.0)
@@ -96,7 +97,7 @@ fn paddle(side: Side) -> impl Scene {
 }
 
 fn move_paddle(
-    keyboard: Res<ButtonInput<KeyCode>>,
+    gamepads: Query<&Gamepad>,
     mut paddle_query: Query<(&mut Transform, &Paddle)>,
     time: Res<Time>,
 ) {
@@ -104,19 +105,13 @@ fn move_paddle(
         let mut direction = 0.0;
         match paddle.side {
             Side::Left => {
-                if keyboard.pressed(KeyCode::KeyW) {
-                    direction = 1.0;
-                }
-                if keyboard.pressed(KeyCode::KeyS) {
-                    direction = -1.0;
+                for gamepad in gamepads {
+                    direction += gamepad.left_stick().y;
                 }
             }
             Side::Right => {
-                if keyboard.pressed(KeyCode::ArrowUp) {
-                    direction = 1.0;
-                }
-                if keyboard.pressed(KeyCode::ArrowDown) {
-                    direction = -1.0;
+                for gamepad in gamepads {
+                    direction += gamepad.right_stick().y;
                 }
             }
         }
