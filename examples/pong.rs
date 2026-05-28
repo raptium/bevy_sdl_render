@@ -1,6 +1,7 @@
 // From https://github.com/MrSheerluck/bevy-pong
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
+use bevy_sdl_render::SdlRenderPlugin;
 
 #[derive(Component)]
 struct Paddle {
@@ -24,19 +25,20 @@ struct Score {
     left: u32,
     right: u32,
 }
-#[derive(Component)]
-struct ScoreText;
 
 fn main() {
     App::new()
-        .add_plugins(DefaultPlugins.set(WindowPlugin {
-            primary_window: Some(Window {
-                resolution: WindowResolution::new(800, 600),
-                title: "Pong".into(),
+        .add_plugins((
+            DefaultPlugins.set(WindowPlugin {
+                primary_window: Some(Window {
+                    resolution: WindowResolution::new(800, 600),
+                    title: "Pong".into(),
+                    ..default()
+                }),
                 ..default()
             }),
-            ..default()
-        }))
+            SdlRenderPlugin,
+        ))
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
         .add_systems(Startup, setup)
         .add_systems(
@@ -55,16 +57,6 @@ fn main() {
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
     commands.insert_resource(Score::default());
-    commands.spawn((
-        Text2d::new("0 - 0"),
-        TextFont {
-            font_size: 60.0,
-            ..default()
-        },
-        TextColor(Color::WHITE),
-        Transform::from_xyz(0.0, 250.0, 0.0),
-        ScoreText,
-    ));
     // Left Paddle
     commands.spawn((
         Paddle {
@@ -185,7 +177,6 @@ fn score_goal(
     mut ball_query: Query<&mut Transform, With<Ball>>,
     mut score: ResMut<Score>,
     window: Single<&Window, With<bevy::window::PrimaryWindow>>,
-    mut score_text: Query<&mut Text2d, With<ScoreText>>,
 ) {
     let width = window.width();
     let half_width = width / 2.0;
@@ -198,10 +189,6 @@ fn score_goal(
             transform.translation = Vec3::new(0.0, 0.0, 0.0);
         } else {
             continue;
-        }
-        // Update score text
-        for mut text in &mut score_text {
-            text.0 = format!("{} - {}", score.left, score.right);
         }
     }
 }
