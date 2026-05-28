@@ -79,6 +79,7 @@ fn sdl_events(
                     win_event: sdlevent::WindowEvent::SizeChanged(..),
                     ..
                 } => sized = true,
+                // XXX handle all keyboard events and submit to Bevy KeyboardInput
                 _ => (),
             }
         }

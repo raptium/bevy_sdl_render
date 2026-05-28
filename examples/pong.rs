@@ -1,5 +1,7 @@
 // From https://github.com/MrSheerluck/bevy-pong
 use bevy::{
+    camera::primitives::Aabb,
+    math::bounding::{Aabb2d, BoundingVolume, IntersectsVolume},
     prelude::*,
     window::{PrimaryWindow, WindowResized, WindowResolution},
 };
@@ -18,7 +20,7 @@ enum Side {
     Right,
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 struct Ball {
     velocity: Vec3,
 }
@@ -66,16 +68,19 @@ fn setup(mut commands: Commands, mut images: ResMut<Assets<Image>>) {
     let paddle_image = images.add(Image::from_color(Color::srgb(1., 0., 0.)));
     commands.spawn_scene(paddle(Side::Left, paddle_image.clone()));
     commands.spawn_scene(paddle(Side::Right, paddle_image));
+    commands.spawn_scene(ball(images.add(Image::from_color(Color::srgb(0., 0., 1.)))));
+}
 
-    // Ball
-    commands.spawn((
+fn ball(image: Handle<Image>) -> impl Scene {
+    bsn! {
         Ball {
             velocity: Vec3::new(300.0, 150.0, 0.0),
-        },
-        Sprite::from_color(Color::WHITE, Vec2::new(10.0, 10.0)),
-        Transform::from_xyz(0.0, 0.0, 0.0),
-        GlobalTransform::default(),
-    ));
+        }
+        Sprite {
+            image: image,
+            custom_size: Vec2::new(10.0, 10.0),
+        }
+    }
 }
 
 fn paddle(side: Side, image: Handle<Image>) -> impl Scene {
@@ -144,29 +149,34 @@ fn bounce_ball(
 }
 
 fn check_paddle_collision(
-    mut ball_query: Query<(&mut Transform, &mut Ball), Without<Paddle>>,
-    paddle_query: Query<(&Transform, &Paddle), Without<Ball>>,
+    mut ball_query: Query<(&mut Transform, &Aabb, &mut Ball), Without<Paddle>>,
+    paddle_query: Query<(&Transform, &Aabb), With<Paddle>>,
 ) {
-    for (mut ball_transform, mut ball) in &mut ball_query {
-        let ball_pos = ball_transform.translation.truncate();
-        let ball_size = Vec2::new(10.0, 10.0);
-        for (paddle_transform, _paddle) in &paddle_query {
+    for (mut ball_transform, ball_aabb, mut ball) in &mut ball_query {
+        let ball_aabb = Aabb2d::new(
+            ball_aabb.center.truncate(),
+            ball_aabb.half_extents.truncate(),
+        )
+        .translated_by(ball_transform.translation.truncate());
+        let ball_half_size = ball_aabb.half_size();
+        for (paddle_transform, paddle_aabb) in &paddle_query {
             let paddle_pos = paddle_transform.translation.truncate();
-            let paddle_size = Vec2::new(10.0, 100.0);
-            // AABB collision check
-            let overlap = !(ball_pos.x + ball_size.x / 2.0 < paddle_pos.x - paddle_size.x / 2.0
-                || ball_pos.x - ball_size.x / 2.0 > paddle_pos.x + paddle_size.x / 2.0
-                || ball_pos.y + ball_size.y / 2.0 < paddle_pos.y - paddle_size.y / 2.0
-                || ball_pos.y - ball_size.y / 2.0 > paddle_pos.y + paddle_size.y / 2.0);
-            if overlap {
+            let paddle_aabb = Aabb2d::new(
+                paddle_aabb.center.truncate(),
+                paddle_aabb.half_extents.truncate(),
+            )
+            .translated_by(paddle_pos);
+            let paddle_half_size = paddle_aabb.half_size();
+            // XXX we could overshoot the paddle
+            if ball_aabb.intersects(&paddle_aabb) {
                 ball.velocity.x = -ball.velocity.x;
                 // Snap ball to paddle edge to prevent sticking
                 if ball.velocity.x > 0.0 {
                     ball_transform.translation.x =
-                        paddle_pos.x + paddle_size.x / 2.0 + ball_size.x / 2.0;
+                        paddle_pos.x + paddle_half_size.x + ball_half_size.x;
                 } else {
                     ball_transform.translation.x =
-                        paddle_pos.x - paddle_size.x / 2.0 - ball_size.x / 2.0;
+                        paddle_pos.x - paddle_half_size.x - ball_half_size.x;
                 }
             }
         }
