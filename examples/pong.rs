@@ -84,9 +84,10 @@ fn ball(image: Handle<Image>) -> impl Scene {
 }
 
 fn paddle(side: Side, image: Handle<Image>) -> impl Scene {
+    const WIDTH: f32 = 10.0;
     let x = match side {
-        Side::Left => -(WINDOW_SIZE.0 as f32 / 2.0),
-        Side::Right => WINDOW_SIZE.0 as f32 / 2.0,
+        Side::Left => -(WINDOW_SIZE.0 as f32 / 2.0) + WIDTH / 2.0,
+        Side::Right => (WINDOW_SIZE.0 as f32 / 2.0) - WIDTH / 2.0,
     };
     bsn! {
         Paddle {
@@ -95,7 +96,7 @@ fn paddle(side: Side, image: Handle<Image>) -> impl Scene {
         }
         Sprite {
             image: image,
-            custom_size: Vec2::new(10.0, 100.0),
+            custom_size: Vec2::new(WIDTH, 100.0),
         }
         Transform::from_xyz(x, 0.0, 0.0)
     }
@@ -206,14 +207,20 @@ fn score_goal(
 fn handle_window_resize(
     mut resize_reader: MessageReader<WindowResized>,
     window: Single<Entity, With<PrimaryWindow>>,
-    mut paddle_query: Query<(&mut Transform, &Paddle)>,
+    mut paddle_query: Query<(&mut Transform, &Aabb, &Paddle)>,
 ) {
     for e in resize_reader.read() {
         if e.window == *window {
-            for (mut paddle_transform, paddle) in paddle_query.iter_mut() {
+            for (mut paddle_transform, paddle_aabb, paddle) in paddle_query.iter_mut() {
+                let half_width = Aabb2d::new(
+                    paddle_aabb.center.truncate(),
+                    paddle_aabb.half_extents.truncate(),
+                )
+                .half_size()
+                .x;
                 match paddle.side {
-                    Side::Left => paddle_transform.translation.x = -(e.width / 2.0),
-                    Side::Right => paddle_transform.translation.x = e.width / 2.0,
+                    Side::Left => paddle_transform.translation.x = -(e.width / 2.0) + half_width,
+                    Side::Right => paddle_transform.translation.x = (e.width / 2.0) - half_width,
                 }
             }
         }
