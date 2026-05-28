@@ -1,16 +1,19 @@
 // From https://github.com/MrSheerluck/bevy-pong
-use bevy::prelude::*;
-use bevy::window::WindowResolution;
+use bevy::{
+    prelude::*,
+    window::{PrimaryWindow, WindowResized, WindowResolution},
+};
 use bevy_sdl_render::SdlRenderPlugin;
 
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 struct Paddle {
     speed: f32,
     side: Side,
 }
 
-#[derive(Component)]
+#[derive(Component, Clone, Copy, Default)]
 enum Side {
+    #[default]
     Left,
     Right,
 }
@@ -26,12 +29,14 @@ struct Score {
     right: u32,
 }
 
+const WINDOW_SIZE: (u32, u32) = (640, 480);
+
 fn main() {
     App::new()
         .add_plugins((
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
-                    resolution: WindowResolution::new(800, 600),
+                    resolution: WindowResolution::new(WINDOW_SIZE.0, WINDOW_SIZE.1),
                     title: "Pong".into(),
                     ..default()
                 }),
@@ -40,6 +45,7 @@ fn main() {
             SdlRenderPlugin,
         ))
         .insert_resource(ClearColor(Color::srgb(0.0, 0.0, 0.0)))
+        .insert_resource(Score::default())
         .add_systems(Startup, setup)
         .add_systems(
             Update,
@@ -49,6 +55,7 @@ fn main() {
                 bounce_ball,
                 check_paddle_collision,
                 score_goal,
+                handle_window_resize,
             ),
         )
         .run();
@@ -56,28 +63,8 @@ fn main() {
 
 fn setup(mut commands: Commands) {
     commands.spawn(Camera2d);
-    commands.insert_resource(Score::default());
-    // Left Paddle
-    commands.spawn((
-        Paddle {
-            speed: 500.0,
-            side: Side::Left,
-        },
-        Sprite::from_color(Color::WHITE, Vec2::new(10.0, 100.0)),
-        Transform::from_xyz(-350.0, 0.0, 0.0),
-        GlobalTransform::default(),
-    ));
-
-    // Right Paddle
-    commands.spawn((
-        Paddle {
-            speed: 500.0,
-            side: Side::Right,
-        },
-        Sprite::from_color(Color::WHITE, Vec2::new(10.0, 100.0)),
-        Transform::from_xyz(350.0, 0.0, 0.0),
-        GlobalTransform::default(),
-    ));
+    commands.spawn_scene(paddle(Side::Left));
+    commands.spawn_scene(paddle(Side::Right));
 
     // Ball
     commands.spawn((
@@ -88,6 +75,24 @@ fn setup(mut commands: Commands) {
         Transform::from_xyz(0.0, 0.0, 0.0),
         GlobalTransform::default(),
     ));
+}
+
+fn paddle(side: Side) -> impl Scene {
+    let x = match side {
+        Side::Left => -(WINDOW_SIZE.0 as f32 / 2.0),
+        Side::Right => WINDOW_SIZE.0 as f32 / 2.0,
+    };
+    bsn! {
+        Paddle {
+            speed: 500.0,
+            side: side,
+        }
+        Sprite {
+            color: Color::WHITE,
+            custom_size: Vec2::new(10.0, 100.0),
+        }
+        Transform::from_xyz(x, 0.0, 0.0)
+    }
 }
 
 fn move_paddle(
@@ -127,7 +132,7 @@ fn move_ball(mut ball_query: Query<(&mut Transform, &Ball)>, time: Res<Time>) {
 
 fn bounce_ball(
     mut ball_query: Query<(&mut Transform, &mut Ball)>,
-    window: Single<&Window, With<bevy::window::PrimaryWindow>>,
+    window: Single<&Window, With<PrimaryWindow>>,
 ) {
     let half_height = window.height() / 2.0;
     let ball_radius = 5.0;
@@ -176,7 +181,7 @@ fn check_paddle_collision(
 fn score_goal(
     mut ball_query: Query<&mut Transform, With<Ball>>,
     mut score: ResMut<Score>,
-    window: Single<&Window, With<bevy::window::PrimaryWindow>>,
+    window: Single<&Window, With<PrimaryWindow>>,
 ) {
     let width = window.width();
     let half_width = width / 2.0;
@@ -189,6 +194,23 @@ fn score_goal(
             transform.translation = Vec3::new(0.0, 0.0, 0.0);
         } else {
             continue;
+        }
+    }
+}
+
+fn handle_window_resize(
+    mut resize_reader: MessageReader<WindowResized>,
+    window: Single<Entity, With<PrimaryWindow>>,
+    mut paddle_query: Query<(&mut Transform, &Paddle)>,
+) {
+    for e in resize_reader.read() {
+        if e.window == *window {
+            for (mut paddle_transform, paddle) in paddle_query.iter_mut() {
+                match paddle.side {
+                    Side::Left => paddle_transform.translation.x = -(e.width / 2.0),
+                    Side::Right => paddle_transform.translation.x = e.width / 2.0,
+                }
+            }
         }
     }
 }
