@@ -13,6 +13,9 @@ bevy = { version = "0.19.0-rc.2", default-features = false, features = ["default
 bevy = { workspace = true }
 sdl2 = { version = "0.38.0", features = ["use-pkgconfig"] }
 wgpu-types = { version = "29.0.3", default-features = false }
+# Framebuffer capture (see src/snapshot.rs). Pinned to the same major as the
+# copy bevy_image already pulls in, so only one is ever compiled.
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [dev-dependencies]
 bevy = { workspace = true, features = ["png", "bevy_gilrs", "scene"] }

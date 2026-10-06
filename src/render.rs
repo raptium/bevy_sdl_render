@@ -15,7 +15,9 @@ use bevy::{
 };
 use sdl2::event as sdlevent;
 
-use crate::{registry::SdlRegistry, texture::SdlTexturePlugin};
+use crate::{
+    input::SdlInput, registry::SdlRegistry, snapshot::SdlSnapshot, texture::SdlTexturePlugin,
+};
 
 pub struct SdlRenderPlugin;
 
@@ -30,6 +32,8 @@ impl Plugin for SdlRenderPlugin {
             .set_runner(runner)
             .insert_resource(sender)
             .insert_resource(receiver)
+            .init_resource::<SdlInput>()
+            .init_resource::<SdlSnapshot>()
             // bevy_render usually registers this
             .register_asset_loader(ImageLoader::new(CompressedImageFormats::NONE))
             .configure_sets(
@@ -62,12 +66,49 @@ fn sdl_events(
     mut window_event: MessageWriter<WindowEvent>,
     mut window: Single<(Entity, &mut Window), With<PrimaryWindow>>,
     mut camera: Single<(&mut Camera, &RenderTarget, &mut Projection), With<Camera2d>>,
+    mut input: ResMut<SdlInput>,
     _non_send: NonSendMarker,
 ) -> Result<()> {
     let mut sized = false;
+    input.begin_frame();
     SdlRegistry::with_borrow_mut(|registry| {
         for event in registry.events() {
             match event {
+                // Bevy's own `ButtonInput` is never populated on this backend
+                // (bevy_winit never runs), so SDL state is republished as-is.
+                sdlevent::Event::KeyDown {
+                    keycode: Some(key),
+                    repeat,
+                    ..
+                } => input.press_key(key, repeat),
+                sdlevent::Event::KeyUp {
+                    keycode: Some(key), ..
+                } => input.release_key(key),
+                // Raw joystick events, not controller events: the controller
+                // layer needs a gamecontrollerdb mapping for this pad and
+                // there is none, so it stays silent.
+                sdlevent::Event::JoyButtonDown { button_idx, .. } => {
+                    input.press_button(button_idx);
+                }
+                sdlevent::Event::JoyButtonUp { button_idx, .. } => {
+                    input.release_button(button_idx);
+                }
+                sdlevent::Event::JoyAxisMotion {
+                    axis_idx, value, ..
+                } => input.set_axis(axis_idx, value),
+                sdlevent::Event::JoyHatMotion {
+                    hat_idx, state, ..
+                } => input.set_hat(hat_idx, state),
+                sdlevent::Event::JoyDeviceAdded { which, .. } => {
+                    input.devices += 1;
+                    input.device_change = true;
+                    println!("SDL: joystick added (index {which})");
+                }
+                sdlevent::Event::JoyDeviceRemoved { which, .. } => {
+                    input.devices = input.devices.saturating_sub(1);
+                    input.device_change = true;
+                    println!("SDL: joystick removed (index {which})");
+                }
                 sdlevent::Event::Quit { .. } => {
                     app_exit_writer.write(AppExit::Success);
                 }
@@ -79,7 +120,6 @@ fn sdl_events(
                     win_event: sdlevent::WindowEvent::SizeChanged(..),
                     ..
                 } => sized = true,
-                // XXX handle all keyboard events and submit to Bevy KeyboardInput
                 _ => (),
             }
         }
@@ -134,9 +174,12 @@ fn render(
     sprites: Query<(&Sprite, &GlobalTransform)>,
     texture_atlases: Res<Assets<TextureAtlasLayout>>,
     clear_color: Res<ClearColor>,
+    mut snapshot: ResMut<SdlSnapshot>,
     _non_send: NonSendMarker,
 ) -> Result<()> {
     let (camera, camera_transform) = *camera;
+    let request = snapshot.take();
+    let captured = request.is_some();
     SdlRegistry::with_borrow_mut(|registry| -> Result<()> {
         let clear = match camera.clear_color {
             ClearColorConfig::Default => Some(clear_color.0),
@@ -145,7 +188,20 @@ fn render(
         };
         registry.clear(clear);
 
-        for (sprite, sprite_transform) in sprites {
+        // Sorted back-to-front on Z. A game cannot influence query iteration
+        // order, so without this every depth-sorted scene (a character walking
+        // behind a table) draws in whatever order the archetypes happen to be
+        // in. SDL paints later copies over earlier ones, so ascending Z is
+        // "further away first".
+        let mut ordered: Vec<(&Sprite, &GlobalTransform)> = sprites.iter().collect();
+        ordered.sort_by(|a, b| {
+            a.1.translation()
+                .z
+                .partial_cmp(&b.1.translation().z)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+
+        for (sprite, sprite_transform) in ordered {
             registry.render_sprite(
                 sprite,
                 camera,
@@ -154,12 +210,19 @@ fn render(
                 texture_atlases.as_ref(),
             )?;
         }
+        // Before present(): after the swap the back buffer is undefined.
+        if let Some(path) = &request {
+            let (width, height) = registry.capture(path)?;
+            println!("SNAPSHOT: {width}x{height} -> {}", path.display());
+        }
         registry.present();
         Ok(())
     })?;
+    if captured {
+        snapshot.done();
+    }
     Ok(())
 }
-
 pub fn runner(mut app: App) -> AppExit {
     if app.plugins_state() != PluginsState::Cleaned {
         while app.plugins_state() == PluginsState::Adding {

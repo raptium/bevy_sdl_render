@@ -1,8 +1,9 @@
 use std::cell::RefCell;
+use std::path::Path;
 
 use bevy::{image::TextureFormatPixelInfo, platform::collections::HashMap, prelude::*};
 use sdl2::{
-    EventPump, VideoSubsystem,
+    EventPump, JoystickSubsystem, VideoSubsystem,
     event::EventPollIterator,
     pixels::{Color as SdlColor, PixelFormatEnum},
     rect::{FPoint, FRect, Rect as SdlRect},
@@ -16,6 +17,10 @@ thread_local! {
 
 pub struct SdlRegistry<'a> {
     video_subsystem: VideoSubsystem,
+    /// Held only to keep the joystick subsystem initialised: SDL shuts a
+    /// subsystem down when the last handle is dropped, and without it no
+    /// joystick event is ever delivered.
+    _joysticks: Result<JoystickSubsystem, String>,
     canvas: Canvas<SdlWindow>,
     texture_creator: &'static TextureCreator<WindowContext>,
     textures: HashMap<AssetId<Image>, SdlTexture<'a>>,
@@ -43,10 +48,29 @@ impl SdlRegistry<'static> {
         // We store the textures in a static HashMap, so TextureCreator needs to be static so they don't outlive it
         let texture_creator: &'static TextureCreator<WindowContext> =
             Box::leak(Box::new(canvas.texture_creator()));
+        // Not fatal: on this hardware the pad may be reachable only through
+        // evdev, and the demo reads that separately.
+        let joysticks = context.joystick().map_err(|e| e.to_string());
+        match &joysticks {
+            Ok(subsystem) => match subsystem.num_joysticks() {
+                Ok(n) => {
+                    println!("SDL: joystick subsystem up, {n} device(s)");
+                    for i in 0..n {
+                        match subsystem.name_for_index(i) {
+                            Ok(name) => println!("SDL:   [{i}] {name}"),
+                            Err(e) => println!("SDL:   [{i}] <name failed: {e}>"),
+                        }
+                    }
+                }
+                Err(e) => println!("SDL: joystick subsystem up, enumeration failed: {e}"),
+            },
+            Err(e) => println!("SDL: joystick subsystem unavailable ({e}); evdev only"),
+        }
         let event_pump = context.event_pump()?;
         SDL_REGISTRY.set(Self {
             event_pump,
             video_subsystem,
+            _joysticks: joysticks,
             canvas,
             texture_creator,
             textures: HashMap::new(),
@@ -92,6 +116,29 @@ impl SdlRegistry<'static> {
 
     pub fn present(&mut self) {
         self.canvas.present();
+    }
+
+    /// Read the current render target back and write it out as a PNG.
+    ///
+    /// Must be called after all drawing for the frame and *before* `present()`:
+    /// once the buffers are swapped the back buffer's contents are undefined.
+    pub fn capture(&self, path: &Path) -> Result<(u32, u32)> {
+        let (width, height) = self.canvas.output_size()?;
+        let pixels = self
+            .canvas
+            .read_pixels(None, PixelFormatEnum::RGBA32)
+            .map_err(|e| format!("read_pixels: {e}"))?;
+        let image = image::RgbaImage::from_raw(width, height, pixels)
+            .ok_or("read_pixels: short buffer for the reported size")?;
+        if let Some(parent) = path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)?;
+        }
+        image
+            .save(path)
+            .map_err(|e| format!("write {}: {e}", path.display()))?;
+        Ok((width, height))
     }
 
     pub fn remove_texture(&mut self, id: &AssetId<Image>) {
